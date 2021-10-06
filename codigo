@@ -1,0 +1,130 @@
+import numpy as np
+import sympy as sym
+import matplotlib.pyplot as plt
+from scipy import interpolate
+from scipy.interpolate import UnivariateSpline
+from scipy import integrate
+import matplotlib.pyplot as plt
+
+
+Omega_b = 0.0223828
+Omega_cdm = 0.1201075
+
+H_0 = 67.32117/3e5     # está en unidades de Mpc
+h= 0.6732117
+Omega_m = (Omega_b + Omega_cdm)*(h**2)
+
+z = 1
+D = 1/(1+z)
+
+#V = (10**11)*(h**3)     # volumen en unidades de (Mpc/h)**3
+V = 100*(h**3)
+
+A_s = 2.100549e-9  # el profe usa 2.215e-09
+n_s = 0.9660499
+k_pivot = 0.05      # esto según class
+
+
+P_list = np.loadtxt('D:\Documentos\Position Dependent PS\Python\Class\ClassPlank01_pk.dat')
+P = UnivariateSpline(P_list[:,0]/h, P_list[:,1]*(h**3))
+
+G_list = np.loadtxt('D:\Documentos\Position Dependent PS\Python\Class\ClassPlank01_tk.dat')
+T_list = np.vstack([G_list[:,0]/h,(G_list[:,0]**(-2) * G_list[:,3])/(G_list[0,0]**(-2) * G_list[0,3])]).T
+k = T_list[:,0]
+T = interpolate.interp1d(T_list[:,0], T_list[:,1])
+
+def M(k): #funcion que retorna el M(k), retorna un arreglo porque Transfer_function es un arreglo
+    return (2*(k**2)*T(k)*D)/(3*Omega_m*(H_0**2))
+
+
+# Necesito dos integrales numericas para continuar:
+# 1.- dk k^3 (P'/P)
+# 2.- dk k^4 (P'/P)^2
+
+derivada = P.derivative()
+
+def k_3(k):
+    return (k**3) * (derivada(k)/P(k))
+    
+def integral_k3(k_min,k_max):
+    return integrate.quad(k_3,k_min,k_max)
+
+def k_4(k):
+    return (k**4) * (derivada(k)/P(k))**2
+
+def integral_k4(k_min,k_max):
+    return integrate.quad(k_4,k_min,k_max)
+    
+    
+    
+# el primer termino de ec.37
+def sigma_0_1(k_min,k_max):
+    return (4/3)*(13/28)**2 * ((np.pi)**(-2))*(k_max**3 - k_min**3)
+
+def sigma_0_2(k_min,k_max):
+    return (16/147)*((np.pi)**(-2))*(k_max**3 - k_min**3)
+
+def sigma_0_3(k_min,k_max):
+    return (1/4)*((np.pi)**(-2))*integral_k4(k_min,k_max)[0]
+                                                          
+def sigma_0_4(k_min,k_max):
+    return (52/147)*((np.pi)**(-2))*(k_max**3 - k_min**3)
+
+def sigma_0_5(k_min,k_max):
+    return (13/14)*((np.pi)**(-2))*integral_k3(k_min,k_max)[0] 
+
+def sigma_0_6(k_min,k_max):
+    return (4/7)*((np.pi)**(-2))*integral_k3(k_min,k_max)[0]
+
+def sigma_0(q,k_min,k_max):
+    return P(q)*(sigma_0_1(k_min,k_max) + sigma_0_2(k_min,k_max) + sigma_0_3(k_min,k_max) + sigma_0_4(k_min,k_max) - sigma_0_5(k_min,k_max) - sigma_0_6(k_min,k_max))
+
+
+# el segundo termino de ec.37
+def sigma_1_1(k_min,k_max): #primer termino de la integral
+    return (13/21)*((np.pi)**(-2))*(k_max**3 - k_min**3)
+
+def sigma_1_2(k_min,k_max): #segundo termino de la integral
+    return (8/63)*((np.pi)**(-2))*(k_max**3 - k_min**3)
+    
+def sigma_1_3(k_min,k_max): #tercer termino de la integral
+    return (1/3)*((np.pi)**(-2)) * integral_k3(k_min,k_max)[0] #hay que cambiarlo
+
+def sigma_1(q,k_min,k_max):
+     return P(q)*((M(q))**(-1)) * (sigma_1_1(k_min,k_max) + sigma_1_2(k_min,k_max) - sigma_1_3(k_min,k_max))
+     
+     
+# el tercer termino de la ec.37
+def sigma_2(q,k_min,k_max):
+    return P(q)*(M(q)**(-1))**2 * ((np.pi)**(-2)) * (4/3)* (k_max**3 - k_min**3)  
+
+
+
+# F dependiente de q
+def F_q(q,k_min,k_max):
+    return (sigma_2(q,k_min,k_max) - (2*(sigma_1(q,k_min,k_max))**2)/(1+(2*sigma_0(q,k_min,k_max))))
+
+
+
+# Ecuación 15, información de Fisher
+def F(q_min,q_max,k_min,k_max):
+    def integrando(q):
+        return V*4*(np.pi)*(1/((2*np.pi)**3))*F_q(q,k_min,k_max)  # el 4*pi viene de la integral angular
+    return integrate.quad(integrando,q_min,q_max,epsrel=1e-04)
+
+
+
+# Sigma(f_nl) --> incertidumbre debe ser un número para cada q
+def sigma(q_min,q_max,k_min,k_max):
+    return F(q_min,q_max,k_min,k_max)[0]**(-1/2)
+    
+    
+k_max = np.linspace(0.05,0.4,10)
+sigma_lista = []
+for x in k_max:
+    resultado = sigma(1e-3,0.02,0.02,x) 
+    sigma_lista.append(resultado)
+    print(resultado)
+
+
+plt.plot(k_max,sigma_lista)
